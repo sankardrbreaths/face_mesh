@@ -9,7 +9,8 @@ from PIL import Image
 import time
 import pandas as pd
 import os
-
+from PIL import Image, ExifTags
+import io
 
 MARGIN = 10  # pixels
 ROW_SIZE = 10  # pixels
@@ -37,7 +38,7 @@ def _normalized_to_pixel_coordinates(
   return x_px, y_px
 
 
-def visualize(image, detection_result):
+def _visualize(image, detection_result):
   """Draws bounding boxes and keypoints on the input image and return it.
   Args:
     image: The input RGB image.
@@ -66,8 +67,6 @@ def visualize(image, detection_result):
     NO_FONT_THICKNESS = 2 # Line thickness
 
     # Draw keypoints
-    # key_point_name = ['right_eye_x', 'right_eye_y', 'left_eye_x', 'left_eye_y', 'nose_x', 'nose_y', 'mouth_x', 'mouth_y', 'right_ear_x', 'right_ear_y', 'left_ear_x', 'left_ear_y']
-
     key_point_name = ['right_eye', 'left_eye', 'nose', 'mouth', 'right_ear', 'left_ear']
 
     keypoint_px  = [_normalized_to_pixel_coordinates(keypoint.x, keypoint.y, width, height) for keypoint in detection.keypoints]
@@ -80,71 +79,98 @@ def visualize(image, detection_result):
       # Plot the number at the keypoint
       cv2.putText(annotated_image, name, position, FONT, NO_FONT_SCALE, NO_FONT_COLOR, NO_FONT_THICKNESS, cv2.LINE_AA)
 
-
     category = detection.categories[0]
     category_name = category.category_name
     category_name = '' if category_name is None else category_name
     probability = round(category.score, 2)
     result_text = category_name + ' (' + str(probability) + ')'
-    text_location = (MARGIN + bbox.origin_x,
-                     MARGIN + ROW_SIZE + bbox.origin_y)
+    text_location = (MARGIN + bbox.origin_x, MARGIN + ROW_SIZE + bbox.origin_y)
     cv2.putText(annotated_image, result_text, text_location, cv2.FONT_HERSHEY_PLAIN,
                 FONT_SIZE, TEXT_COLOR, FONT_THICKNESS)
 
-  return annotated_image, keypoint_dict
+  return annotated_image
 
-def calculate_distance(point1, point2):
-  return math.sqrt((point2[0] - point1[0])**2 + (point2[1] - point1[1])**2)
 
-def face_orient_classifier(keypoint_dict):
-  angle_rad_left_eye = math.degrees(math.atan2(keypoint_dict['nose'][1] - keypoint_dict['left_eye'][1], keypoint_dict['nose'][0] - keypoint_dict['left_eye'][0]))
-  angle_rad_right_eye = math.degrees(math.atan2(keypoint_dict['nose'][1] - keypoint_dict['right_eye'][1], keypoint_dict['nose'][0] - keypoint_dict['right_eye'][0]))
+def _face_orient_classifier(keypoint_dict)->str:
+  angle_left_eye = math.degrees(math.atan2(keypoint_dict['nose'][1] - keypoint_dict['left_eye'][1], keypoint_dict['nose'][0] - keypoint_dict['left_eye'][0]))
+  angle_right_eye = math.degrees(math.atan2(keypoint_dict['nose'][1] - keypoint_dict['right_eye'][1], keypoint_dict['nose'][0] - keypoint_dict['right_eye'][0]))
 
-  if angle_rad_left_eye > 90 > angle_rad_right_eye :
-    return 'front'
-  elif angle_rad_left_eye and angle_rad_right_eye > 90 or angle_rad_left_eye and angle_rad_right_eye < 90:
-    return 'profile'
-  else:
-    return 'not_sure'
-     
+  if angle_left_eye > 90 > angle_right_eye :
+    prediction = 'front'
+  elif angle_left_eye and angle_right_eye >= 90 or angle_left_eye and angle_right_eye <= 90:
+    prediction = 'profile'
 
-def main():
+  return prediction
 
+
+def _correct_rotation(img: Image)->Image:
+  try:
+      if hasattr(img, '_getexif'): # only present in PIL images
+          for orientation in ExifTags.TAGS.keys():
+              if ExifTags.TAGS[orientation] == 'Orientation':
+                  break
+          e = img._getexif()
+          if e is not None:
+              exif = dict(e.items())
+              orientation = exif[orientation]
+
+              if orientation == 3:
+                  img = img.rotate(180, expand=True)
+              elif orientation == 6:
+                  img = img.rotate(270, expand=True)
+              elif orientation == 8:
+                  img = img.rotate(90, expand=True)
+      return img
+  except:
+      return img
+    
+
+def detect_face(img: np.array)->str:
   base_options = python.BaseOptions(model_asset_path='detector.tflite')
   options = vision.FaceDetectorOptions(base_options=base_options)
   detector = vision.FaceDetector.create_from_options(options)
+  image = mp.Image(data=np.asarray(img), image_format=mp.ImageFormat.SRGB)
 
-  directory = 'Data/Data_SVM/profile'
-  pred_directory = 'Data/prediction_profile'
+  face_detection_result = detector.detect(image)
+
+  if len(face_detection_result.detections) ==0:
+     return 'no_face'
+  elif len(face_detection_result.detections) > 1:
+     return 'multiple_face'
+  else:
+    height, width, _ = img.shape
+    key_point_name = ['right_eye', 'left_eye', 'nose', 'mouth', 'right_ear', 'left_ear']
+    key_points = face_detection_result.detections[0].keypoints
+    keypoint_px  = [_normalized_to_pixel_coordinates(keypoint.x, keypoint.y, width, height) for keypoint in key_points]
+    keypoint_dict = dict(zip(key_point_name, keypoint_px))
+    pred_face_orientation = _face_orient_classifier(keypoint_dict)
+    return pred_face_orientation
+
+
+def main():
+  directory = 'Data/IPhone/'
+  pred_directory = 'Data/pred/iphone/'
+
   os.makedirs(pred_directory, exist_ok=True)
-  key_point_name = ['right_eye', 'left_eye', 'nose', 'mouth', 'right_ear', 'left_ear']
-
+  key_point_name = ['class_gt', 'class_pred']
 
   data = {key: [] for key in key_point_name}
-  for root, dirs, files in os.walk(directory):
+  for root, _, files in os.walk(directory):
       for file in files:
           if file.lower().endswith(('.jpg', '.png')):
               img_path = os.path.join(root, file)
 
-              image = mp.Image.create_from_file(img_path)
+              # Convert to PIL image to check and correct orientation
+              img_pil = Image.open(img_path)
+              img_pil = _correct_rotation(img_pil)
+              img_pil = np.asarray(img_pil)
 
-              # STEP 4: Detect faces in the input image.
-              face_detection_result = detector.detect(image)
+              face_detection_result = detect_face(img_pil)
+              data['class_gt'].append(img_path.split('/')[-1])
+              data['class_pred'].append(face_detection_result)
 
-              # STEP 5: Process the detection result. In this case, visualize it.
-              image_copy = np.copy(image.numpy_view())
-              annotated_image, keypoint_dict = visualize(image_copy, face_detection_result)
-
-              # left_eye_dist_from_nose = calculate_distance(keypoint_dict['nose'], keypoint_dict['left_eye'])
-              # right_eye_dist_from_nose = calculate_distance(keypoint_dict['nose'], keypoint_dict['right_eye'])
-
-              pred = face_orient_classifier(keypoint_dict)
-              print(pred)
-              keypoint_dict['img']= img_path.split('/')[-1]
-              keypoint_dict['class_gt']= img_path.split('/')[-2]
-              keypoint_dict['class_pred']= pred
-              img = Image.fromarray(annotated_image)
-              img.save(os.path.join(pred_directory, file))
+  df = pd.DataFrame(data)
+  df.to_excel(pred_directory + "results.xlsx")
 
 if __name__ == "__main__":
   main()
