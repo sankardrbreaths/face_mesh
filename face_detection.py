@@ -4,7 +4,6 @@ import cv2
 import numpy as np
 import mediapipe as mp
 from mediapipe.tasks import python
-import pandas as pd
 import os
 from PIL import Image, ExifTags
 
@@ -260,9 +259,7 @@ def main():
               # annotated_image.save(pred_directory + file)
               data['class_gt'].append(img_path.split('/')[-1])
               data['class_pred'].append(prediction)
-
-  df = pd.DataFrame(data)
-  df.to_excel(pred_directory + "results.xlsx")
-
+  print(data)
+  
 if __name__ == "__main__":
   main()
