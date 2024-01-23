@@ -14,6 +14,9 @@ FONT_SIZE = 1
 FONT_THICKNESS = 1
 TEXT_COLOR = (255, 0, 0)  # red
 
+base_options = python.BaseOptions(model_asset_path='detector.tflite')
+options = python.vision.FaceDetectorOptions(base_options=base_options)
+detector = python.vision.FaceDetector.create_from_options(options)
 
 def _normalized_to_pixel_coordinates(normalized_x: float, normalized_y: float, 
                                      image_width: int, image_height: int) -> Union[None, Tuple[int, int]]:
@@ -207,10 +210,7 @@ def detect_face(img: np.array) -> mp.tasks.vision.FaceDetectorResult:
         mp.solutions.face_detection.FaceDetectorResult: The result of the face detection process,
                                                         containing detected face information.
     """
-  base_options = python.BaseOptions(model_asset_path='detector.tflite')
-  options = python.vision.FaceDetectorOptions(base_options=base_options)
-  detector = python.vision.FaceDetector.create_from_options(options)
-  image = mp.Image(data=np.asarray(img), image_format=mp.ImageFormat.SRGB)
+  image = mp.Image(data=img, image_format=mp.ImageFormat.SRGB)
 
   face_detection_result = detector.detect(image)
 
@@ -235,7 +235,6 @@ def predict_face(img: np.ndarray)->str:
 
 
 def main():
-  # Example usage
   data_directory = 'Data/IPhone/'
   pred_directory = 'Data/pred/iphone/'
 
@@ -244,23 +243,26 @@ def main():
 
   data = {key: [] for key in key_point_name}
   for root, _, files in os.walk(data_directory):
-    for file in files:
-        if file.lower().endswith(('.jpg', '.png')):
-            img_path = os.path.join(root, file)
+      print(f"Processing directory: {root}")
+      for file in files:
+          try:
+              if file.lower().endswith(('.jpg', '.png', '.JPG', '.jpeg')):
+                  img_path = os.path.join(root, file)
+                  print(file)
+                  img_pil = Image.open(img_path)
+                  img_pil = _correct_image_rotation(img_pil)
+                  img = np.asarray(img_pil)
 
-            # Convert to PIL image to check and correct orientation
-            img_pil = Image.open(img_path)
-            img_pil = _correct_image_rotation(img_pil)
-            img = np.asarray(img_pil)
-
-            detection_result = detect_face(img_pil)
-            prediction = classify_detection(detection_result, img.shape)
-            annotated_image = _visualize(img, detection_result)
-            annotated_image = Image.fromarray(annotated_image)
-            annotated_image.save(pred_directory + file)
-            data['class_gt'].append(img_path.split('/')[-1])
-            data['class_pred'].append(prediction)
-          
+                  detection_result = detect_face(img)
+                  prediction = classify_detection(detection_result, img.shape)
+                  annotated_image = _visualize(img, detection_result)
+                  annotated_image = Image.fromarray(annotated_image)
+                  annotated_image.save(pred_directory + file)
+                  data['class_gt'].append(img_path.split('/')[-1])
+                  data['class_pred'].append(prediction)
+          except Exception as e:
+              print(f"Error processing file {file}: {e}")
+              
   df = pd.DataFrame(data)
   df.to_excel(pred_directory+'results.xlsx')
   print(df.head())
