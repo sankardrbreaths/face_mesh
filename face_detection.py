@@ -6,6 +6,7 @@ import mediapipe as mp
 from mediapipe.tasks import python
 import os
 from PIL import Image, ExifTags
+import pandas as pd
 
 MARGIN = 10  # pixels
 ROW_SIZE = 10  # pixels
@@ -243,23 +244,25 @@ def main():
 
   data = {key: [] for key in key_point_name}
   for root, _, files in os.walk(data_directory):
-      for file in files:
-          if file.lower().endswith(('.jpg', '.png')):
-              img_path = os.path.join(root, file)
+    for file in files:
+        if file.lower().endswith(('.jpg', '.png')):
+            img_path = os.path.join(root, file)
 
-              # Convert to PIL image to check and correct orientation
-              img_pil = Image.open(img_path)
-              img_pil = _correct_image_rotation(img_pil)
-              img = np.asarray(img_pil)
+            # Convert to PIL image to check and correct orientation
+            img_pil = Image.open(img_path)
+            img_pil = _correct_image_rotation(img_pil)
+            img = np.asarray(img_pil)
 
-              detection_result = detect_face(img_pil)
-              prediction = classify_detection(detection_result, img.shape)
-              # annotated_image = _visualize(img, detection_result)
-              # annotated_image = Image.fromarray(annotated_image)
-              # annotated_image.save(pred_directory + file)
-              data['class_gt'].append(img_path.split('/')[-1])
-              data['class_pred'].append(prediction)
-  print(data)
-  
+            detection_result = detect_face(img_pil)
+            prediction = classify_detection(detection_result, img.shape)
+            annotated_image = _visualize(img, detection_result)
+            annotated_image = Image.fromarray(annotated_image)
+            annotated_image.save(pred_directory + file)
+            data['class_gt'].append(img_path.split('/')[-1])
+            data['class_pred'].append(prediction)
+          
+  df = pd.DataFrame(data)
+  df.to_excel(pred_directory+'results.xlsx')
+  print(df.head())
 if __name__ == "__main__":
   main()
