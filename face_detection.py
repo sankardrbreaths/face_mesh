@@ -217,7 +217,7 @@ def detect_face(img: np.array) -> mp.tasks.vision.FaceDetectorResult:
   return face_detection_result
 
 
-def predict(img: np.ndarray)->str:
+def predict_face(img: np.ndarray)->str:
    """
     Predicts the face (no_face, multiple_face, frontal, profile) in a given image.
 
