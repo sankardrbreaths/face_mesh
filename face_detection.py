@@ -13,9 +13,10 @@ ROW_SIZE = 10  # pixels
 FONT_SIZE = 1
 FONT_THICKNESS = 1
 TEXT_COLOR = (255, 0, 0)  # red
+MIN_DETECTION_CONFIDENCE = 0.61
 
 base_options = python.BaseOptions(model_asset_path='detector.tflite')
-options = python.vision.FaceDetectorOptions(base_options=base_options)
+options = python.vision.FaceDetectorOptions(base_options=base_options, min_detection_confidence=MIN_DETECTION_CONFIDENCE)
 detector = python.vision.FaceDetector.create_from_options(options)
 
 def _normalized_to_pixel_coordinates(normalized_x: float, normalized_y: float, 
@@ -235,11 +236,11 @@ def predict_face(img: np.ndarray)->str:
 
 
 def main():
-  data_directory = 'Data/IPhone/'
-  pred_directory = 'Data/pred/iphone/'
+  data_directory = 'Data/test_data'
+  pred_directory = f'Data/pred/iphone/{MIN_DETECTION_CONFIDENCE}/'
 
   os.makedirs(pred_directory, exist_ok=True)
-  key_point_name = ['class_gt', 'class_pred']
+  key_point_name = ['file_name','class_gt', 'class_pred']
 
   data = {key: [] for key in key_point_name}
   for root, _, files in os.walk(data_directory):
@@ -247,8 +248,7 @@ def main():
       for file in files:
           try:
               if file.lower().endswith(('.jpg', '.png', '.JPG', '.jpeg')):
-                  img_path = os.path.join(root, file)
-                  print(file)
+                  img_path = root +'/'+ file
                   img_pil = Image.open(img_path)
                   img_pil = _correct_image_rotation(img_pil)
                   img = np.asarray(img_pil)
@@ -258,13 +258,14 @@ def main():
                   annotated_image = _visualize(img, detection_result)
                   annotated_image = Image.fromarray(annotated_image)
                   annotated_image.save(pred_directory + file)
-                  data['class_gt'].append(img_path.split('/')[-1])
+                  data['file_name'].append(img_path.split('/')[-1])
+                  data['class_gt'].append(img_path.split('/')[-2])
                   data['class_pred'].append(prediction)
           except Exception as e:
               print(f"Error processing file {file}: {e}")
-              
+
   df = pd.DataFrame(data)
-  df.to_excel(pred_directory+'results.xlsx')
+  df.to_excel(pred_directory+'results.xlsx', index=False)
   print(df.head())
 if __name__ == "__main__":
   main()
